@@ -1,6 +1,9 @@
 import { useState } from "react"
-import { ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PageHeader } from "@/components/page-header"
+import { TldrCard } from "@/components/tldr-card"
+import { DataSources } from "@/components/data-sources"
+import { PageFooter } from "@/components/page-footer"
 
 type Category = "root" | "stop" | "workflow" | "standards" | "template" | "output" | "mcp" | "inline" | "subrepo"
 
@@ -128,24 +131,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div
-        aria-hidden
-        className="fixed inset-x-0 top-0 h-64 -z-10 opacity-30 pointer-events-none"
-        style={{ background: "radial-gradient(ellipse 70% 60% at 30% 0%, oklch(0.6 0.18 150 / 0.7), transparent), radial-gradient(ellipse 60% 55% at 80% 0%, oklch(0.55 0.2 265 / 0.5), transparent)" }}
-      />
       <main className="mx-auto max-w-6xl px-4 md:px-6 py-10">
-        <a href="https://ankush-rustagi.github.io/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8">
-          <ArrowLeft className="size-4" />Back to index
-        </a>
+        <PageHeader
+          type="Agent Routing Map"
+          title="AGENTS.md Router Map"
+          subtitle="How the root AGENTS.md routes to every downstream file. Every STOP gate means the agent must read the destination before writing output. Hover a node for details."
+          createdDate="Apr 22, 2026"
+          modifiedDate="May 16, 2026"
+          stats={[
+            { value: NODES.length, label: "nodes" },
+            { value: EDGES.length, label: "edges" },
+            { value: DECISION_ROWS.filter(r => r.gateType === "stop").length, label: "STOP gates" },
+          ]}
+          gradient="radial-gradient(ellipse 70% 60% at 30% 0%, oklch(0.6 0.18 150 / 0.7), transparent), radial-gradient(ellipse 60% 55% at 80% 0%, oklch(0.55 0.2 265 / 0.5), transparent)"
+        />
 
-        <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight leading-tight mb-2">
-            AGENTS.md Router Map
-          </h1>
-          <p className="text-muted-foreground max-w-2xl">
-            How the root AGENTS.md routes to every downstream file. Every STOP gate means the agent must read the destination before writing output. Hover a node for details.
-          </p>
-        </header>
+        <TldrCard items={[
+          "The root AGENTS.md is always loaded — it routes before any output is generated.",
+          "5 STOP gates block output until a specific file is read: doc tasks, SQL queries, status reports, weekly recaps, and code exploration.",
+          "The Read Before Proceeding table covers 14 task-specific routes for more granular tasks (diagrams, tone, org lookups, etc.).",
+          "3 inline rules are always active in context: calendar fill, voice-to-text corrections, and quick-publish.",
+          "Hover any node in the DAG to see which nodes it connects to and receive from.",
+        ]} />
 
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-6">
@@ -272,9 +279,17 @@ export default function App() {
           ))}
         </div>
 
-        <footer className="mt-12 pt-6 border-t border-border text-xs text-muted-foreground">
-          Ankush Rustagi · Verkada Product · Root AGENTS.md v6.0 · 258 lines · ~2,700 tokens · All workflows in downstream files
-        </footer>
+        <DataSources
+          sources={[
+            { label: "AGENTS.md (workspace root)", description: "Root routing file — v6.1, ~260 lines, ~2,700 tokens. All STOP gates and RBP routes derived directly from this file." },
+            { label: "04-standards/ reference docs", description: "14 standards files referenced by the Read Before Proceeding table. Each doc governs a specific task type." },
+            { label: "documentation-workflow.md", description: "Primary documentation workflow reference — 1,210 lines. Full 5-phase process for PM doc creation." },
+          ]}
+          methodology="Nodes and edges were extracted manually from AGENTS.md v6.1. Tier layout was hand-assigned based on routing depth from the root node. STOP gates = must-read-first; RBP = conditional read; Inline = always active."
+          asOf="May 2026"
+        />
+
+        <PageFooter extra="Root AGENTS.md v6.1 · 260 lines · ~2,700 tokens" />
       </main>
     </div>
   )
