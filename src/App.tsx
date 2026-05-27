@@ -237,37 +237,95 @@ const CATEGORY_META: Record<Category, { label: string; desc: string; color: stri
   subrepo:   { label: "Sub-AGENTS", desc: "Scoped AGENTS.md for sub-repos / other PMs", color: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" },
 }
 
-// Layered DAG. Tier widths are intentionally uneven: the root sits alone in
-// tier 0, all direct-from-root routes (STOP gates, RBP, inline rules) live
-// in tier 1, primary procedural references in tier 2, standards/templates/
-// scripts/MCPs in tier 3, and final outputs / sub-resources in tier 4.
-const TIERS: string[][] = [
-  ["root"],
-  [
-    "stop-docs", "stop-sql", "stop-status", "stop-recap", "stop-code",
-    "rbp", "docs-sub",
-    "inline-mcp-first", "inline-emdash", "inline-md-fmt", "inline-names",
-    "inline-gdrive-guard", "inline-config-guard", "inline-pmw-sec",
-    "inline-card-titles", "inline-banned-rules", "inline-gh-cli",
-    "inline-gdoc-table", "inline-quick-pub", "inline-cal-fill",
-  ],
-  [
-    "doc-router", "doc-workflow", "data-pre", "wk-readme", "recap-rb",
-    "code-explore", "graphify", "crg",
-    "stds", "agents-auth", "repomix-guide",
-    "templates", "latency-template",
-  ],
-  [
-    "script-quick-pub", "script-sync", "script-gdoc", "script-validate-md", "script-pmw",
-    "mcp-granola", "mcp-linear", "mcp-cal", "mcp-notion", "mcp-figma",
-    "mcp-slack", "mcp-cowork", "mcp-datadog", "mcp-hex", "mcp-gdrive",
-    "mcp-lucid", "mcp-perplexity", "mcp-repomix",
-    "slack-map", "datadog-runbook", "data-infra", "org-yaml", "pm-wk-config",
-  ],
-  [
-    "pm-docs", "be-docs", "data-refs", "source",
-    "wk-out", "pm-wk", "pm-wk-ankush", "slack-intel",
-  ],
+// Layered DAG, now read top-to-bottom. Each tier renders as a horizontal
+// flex-wrap row so wide tiers (inline rules, MCP servers) wrap across the
+// available width instead of stacking into a 1500px-tall column. Tiers
+// also get a short subtitle since groups within a tier can be visually
+// scanned by category color.
+interface TierGroup {
+  label: string
+  nodes: string[]
+}
+interface Tier {
+  label: string
+  caption: string
+  groups: TierGroup[]
+}
+
+const TIERS: Tier[] = [
+  {
+    label: "Root",
+    caption: "Always loaded before any output",
+    groups: [{ label: "", nodes: ["root"] }],
+  },
+  {
+    label: "STOP gates + sub-routers",
+    caption: "Hard pre-flights and the docs-only sub-AGENTS for other PMs",
+    groups: [
+      { label: "STOP gates", nodes: ["stop-docs", "stop-sql", "stop-status", "stop-recap", "stop-code"] },
+      { label: "Routing + sub-AGENTS", nodes: ["rbp", "docs-sub"] },
+    ],
+  },
+  {
+    label: "Inline rules",
+    caption: "Always-active baseline behavior and trigger phrases",
+    groups: [
+      {
+        label: "Always-active",
+        nodes: [
+          "inline-mcp-first", "inline-emdash", "inline-md-fmt", "inline-names",
+          "inline-gdrive-guard", "inline-config-guard", "inline-pmw-sec",
+          "inline-card-titles", "inline-banned-rules", "inline-gh-cli",
+          "inline-gdoc-table",
+        ],
+      },
+      { label: "Trigger phrases", nodes: ["inline-quick-pub", "inline-cal-fill"] },
+    ],
+  },
+  {
+    label: "Workflow + standards references",
+    caption: "Primary destinations from STOP gates and the RBP table",
+    groups: [
+      { label: "Workflows", nodes: ["doc-router", "doc-workflow", "data-pre", "wk-readme", "recap-rb", "code-explore"] },
+      { label: "Code graphs", nodes: ["graphify", "crg"] },
+      { label: "Standards + templates", nodes: ["stds", "agents-auth", "repomix-guide", "templates", "latency-template"] },
+    ],
+  },
+  {
+    label: "Tools + data sources",
+    caption: "MCP servers, scripts, and lookup files cited by the workflows",
+    groups: [
+      {
+        label: "MCP servers (MCP-First Rule)",
+        nodes: [
+          "mcp-granola", "mcp-linear", "mcp-cal", "mcp-notion", "mcp-figma",
+          "mcp-slack", "mcp-cowork", "mcp-datadog", "mcp-hex", "mcp-gdrive",
+          "mcp-lucid", "mcp-perplexity", "mcp-repomix",
+        ],
+      },
+      {
+        label: "Scripts (01-scripts/)",
+        nodes: ["script-quick-pub", "script-sync", "script-gdoc", "script-validate-md", "script-pmw"],
+      },
+      {
+        label: "Lookups + configs",
+        nodes: ["slack-map", "datadog-runbook", "data-infra", "org-yaml", "pm-wk-config"],
+      },
+    ],
+  },
+  {
+    label: "Final outputs",
+    caption: "Where the agent's work lands",
+    groups: [
+      {
+        label: "",
+        nodes: [
+          "pm-docs", "be-docs", "data-refs", "source",
+          "wk-out", "pm-wk", "pm-wk-ankush", "slack-intel",
+        ],
+      },
+    ],
+  },
 ]
 
 const DECISION_ROWS = [
@@ -337,13 +395,13 @@ function NodeBox({ node, isHovered, isDimmed, onHover, onLeave }: {
 }
 
 /**
- * Sticky right-rail inspector that consolidates what used to be two
- * separate panels (one above the DAG, one below). Keeping it in a fixed
- * 320px column with a min-height stops the diagram from reflowing as the
- * hover state changes, eliminating the jitter the user saw when sweeping
- * across nodes.
+ * Floating inspector. Fixed position so it never reflows the page when
+ * the hover state changes and never steals horizontal space from the
+ * diagram. Collapses to a small hint chip when nothing is hovered, and
+ * expands to a full card with the node's category, path, description,
+ * and connection lists when a node is hovered.
  */
-function InspectorPanel({
+function FloatingInspector({
   hovered,
   hoveredNode,
   nodeById,
@@ -360,21 +418,37 @@ function InspectorPanel({
     : []
 
   return (
-    <aside className="lg:sticky lg:top-6 order-1 lg:order-2 self-start">
-      <div className="rounded-xl border border-border bg-card p-4 min-h-[24rem] max-h-[calc(100vh-3rem)] overflow-y-auto">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-mono mb-3">
-          Inspector
-        </div>
+    <aside
+      className={cn(
+        "fixed z-50 transition-all duration-200",
+        // Bottom-right on lg+, full-width sticky to bottom on smaller screens.
+        "left-3 right-3 bottom-3 md:left-auto md:right-6 md:bottom-6",
+        "md:w-[380px]",
+        hoveredNode ? "opacity-100" : "opacity-90",
+      )}
+    >
+      <div
+        className={cn(
+          "rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-2xl",
+          "max-h-[60vh] overflow-y-auto",
+          hoveredNode ? "p-4" : "px-4 py-2.5",
+        )}
+      >
         {hoveredNode ? (
           <>
-            <span
-              className={cn(
-                "inline-block rounded border px-1.5 py-px text-[10px] font-medium mb-2",
-                CATEGORY_META[hoveredNode.category].color,
-              )}
-            >
-              {CATEGORY_META[hoveredNode.category].label}
-            </span>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span
+                className={cn(
+                  "inline-block rounded border px-1.5 py-px text-[10px] font-medium",
+                  CATEGORY_META[hoveredNode.category].color,
+                )}
+              >
+                {CATEGORY_META[hoveredNode.category].label}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-mono">
+                Inspector
+              </span>
+            </div>
             <div className="font-semibold text-sm leading-snug">{hoveredNode.label}</div>
             <div className="text-xs text-muted-foreground mt-1">{hoveredNode.sub}</div>
             {hoveredNode.path && (
@@ -387,20 +461,20 @@ function InspectorPanel({
             </div>
 
             {(receivesFrom.length > 0 || sendsTo.length > 0) && (
-              <div className="mt-5 pt-4 border-t border-border/50 space-y-4">
+              <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
                 {receivesFrom.length > 0 && (
-                  <ConnectionList label="Receives from" items={receivesFrom} />
+                  <ConnectionList label={`Receives from (${receivesFrom.length})`} items={receivesFrom} />
                 )}
                 {sendsTo.length > 0 && (
-                  <ConnectionList label="Sends to" items={sendsTo} />
+                  <ConnectionList label={`Sends to (${sendsTo.length})`} items={sendsTo} />
                 )}
               </div>
             )}
           </>
         ) : (
-          <div className="text-sm text-muted-foreground/70 leading-relaxed">
-            Hover any node in the diagram to see its category, file path,
-            description, and which other nodes it sends to or receives from.
+          <div className="text-xs text-muted-foreground/80 leading-snug flex items-center gap-2">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-foreground/50 animate-pulse" />
+            Hover any node to see its routing chain.
           </div>
         )}
       </div>
@@ -471,17 +545,17 @@ export default function App() {
         if (!fromEl || !toEl) continue
         const fb = fromEl.getBoundingClientRect()
         const tb = toEl.getBoundingClientRect()
-        const x1 = fb.right - cBox.left
-        const y1 = fb.top + fb.height / 2 - cBox.top
-        const x2 = tb.left - cBox.left
-        const y2 = tb.top + tb.height / 2 - cBox.top
-        // Horizontal control offset proportional to span so far-apart tiers
-        // get gentler curves than adjacent tiers.
-        const dx = Math.max((x2 - x1) * 0.5, 28)
+        // Vertical bezier: source bottom-center → target top-center. The
+        // top-down tier layout makes this the natural curve direction.
+        const x1 = fb.left + fb.width / 2 - cBox.left
+        const y1 = fb.bottom - cBox.top
+        const x2 = tb.left + tb.width / 2 - cBox.left
+        const y2 = tb.top - cBox.top
+        const dy = Math.max((y2 - y1) * 0.5, 32)
         computed.push({
           from: e.from,
           to: e.to,
-          d: `M ${x1},${y1} C ${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
+          d: `M ${x1},${y1} C ${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`,
         })
       }
       setEdgePaths(computed)
@@ -526,7 +600,7 @@ export default function App() {
           "13 always-active inline rules govern baseline behavior (MCP-First, em-dash ban, voice-to-text, GH CLI, Drive guard, config guard, banned rule files, card-title length, etc.).",
           "MCP-First Rule fans out to 13 servers (Granola, Linear, Calendar, Figma, Notion, Slack, Cowork, Datadog, Hex, Drive, Lucid, Perplexity, Repomix). Weekly recap pulls 5 of them in parallel.",
           "Code exploration is now a two-tool stack: graphify for the overall map, code-review-graph (CRG) for blast radius and review-time deep dives.",
-          "Hover any node in the DAG to see its file path, category description, and the upstream/downstream chain (highlighted edges).",
+          "Edges hidden at rest. Hover any node to light up just that node's upstream and downstream chain; the floating inspector (bottom-right) shows file path, description, and a list of every neighbor.",
         ]} />
 
         {/* Legend */}
@@ -538,84 +612,119 @@ export default function App() {
           ))}
         </div>
 
-        {/* Diagram + sticky inspector panel
+        {/* Diagram (vertical / top-down)
             -----------------------------------
-            Previously the hover details lived in two panels (one above the
-            DAG, one below). Both panels resized or appeared/disappeared on
-            hover, which reflowed the page and made the diagram jitter as
-            the cursor moved between nodes.
-            Now both live in a single sticky right-rail card whose width is
-            fixed, so the diagram never reflows. On screens narrower than
-            `lg`, the inspector stacks above the diagram (no jitter because
-            its content updates in place at a fixed min height). */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 mb-10 items-start">
-          <div className="rounded-xl border border-border bg-card overflow-x-auto p-5 order-2 lg:order-1">
-            <div ref={tiersRef} className="relative flex gap-5 min-w-max">
-              {/* Connector overlay. Sits behind the node columns (z-0) and
-                  ignores pointer events so hover still hits the buttons. */}
-              <svg
-                className="absolute inset-0 pointer-events-none text-foreground"
-                width={svgSize.w}
-                height={svgSize.h}
-                style={{ width: svgSize.w, height: svgSize.h }}
-                aria-hidden
-              >
-                {edgePaths.map((p) => {
-                  const isConnected = hovered != null && (p.from === hovered || p.to === hovered)
-                  const isDimmed = hovered != null && !isConnected
-                  return (
-                    <path
-                      key={`${p.from}-${p.to}`}
-                      d={p.d}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={isConnected ? 2 : 1}
-                      strokeOpacity={isConnected ? 0.7 : isDimmed ? 0.05 : 0.18}
-                      strokeLinecap="round"
-                      className="transition-[stroke-opacity,stroke-width] duration-150"
-                    />
-                  )
-                })}
-              </svg>
+            Previous horizontal layout made tier 1 stack 20 nodes deep
+            (~1500px tall) and stole 300px of width for the inspector,
+            which clipped tier 4. The new layout flows top-to-bottom:
+            each tier is a horizontal flex-wrap row that uses the full
+            page width, and the inspector floats in the bottom-right
+            instead of competing for horizontal space.
 
-              {TIERS.map((tier, tierIdx) => (
-                <div key={tierIdx} className="relative z-10 flex flex-col gap-3 justify-center">
-                  <div className="text-[10px] text-muted-foreground/50 text-center font-mono mb-1">Tier {tierIdx}</div>
-                  {tier.map(nodeId => {
-                    const node = nodeById[nodeId]
-                    if (!node) return null
-                    const isH = hovered === nodeId
-                    const isDimmed = hovered != null && !connectedIds.has(nodeId) && hovered !== nodeId
-                    return (
-                      <div
-                        key={nodeId}
-                        ref={(el) => { nodeRefs.current[nodeId] = el }}
-                      >
-                        <NodeBox
-                          node={node}
-                          isHovered={isH}
-                          isDimmed={isDimmed}
-                          onHover={() => setHovered(nodeId)}
-                          onLeave={() => setHovered(null)}
-                        />
-                      </div>
-                    )
-                  })}
+            Edges are hidden at rest (strokeOpacity 0). They only render
+            for the hovered node's upstream + downstream chain. With 79
+            edges any rest-state opacity creates a noise mat that buries
+            the hover signal. */}
+        <div className="rounded-xl border border-border bg-card p-5 mb-10">
+          <div ref={tiersRef} className="relative flex flex-col gap-10">
+            {/* Connector overlay. Covers the entire stack of tiers. */}
+            <svg
+              className="absolute inset-0 pointer-events-none text-foreground"
+              width={svgSize.w}
+              height={svgSize.h}
+              style={{ width: svgSize.w, height: svgSize.h }}
+              aria-hidden
+            >
+              {edgePaths.map((p) => {
+                const isConnected = hovered != null && (p.from === hovered || p.to === hovered)
+                if (!isConnected) return null
+                return (
+                  <path
+                    key={`${p.from}-${p.to}`}
+                    d={p.d}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeOpacity={0.75}
+                    strokeLinecap="round"
+                    className="transition-[stroke-opacity,stroke-width] duration-150"
+                  />
+                )
+              })}
+            </svg>
+
+            {TIERS.map((tier, tierIdx) => (
+              <div key={tierIdx} className="relative z-10">
+                <div className="mb-2 flex items-baseline gap-2">
+                  <span className="text-[10px] uppercase tracking-widest font-mono text-muted-foreground/60">
+                    Tier {tierIdx}
+                  </span>
+                  <span className="text-xs font-semibold text-foreground/80">{tier.label}</span>
+                  <span className="text-[11px] text-muted-foreground/60">{tier.caption}</span>
                 </div>
-              ))}
-            </div>
 
-            <div className="mt-4 text-xs text-muted-foreground/50 text-center">
-              Edges: {EDGES.length} connections · Nodes: {NODES.length}
-            </div>
+                <div className={cn(
+                  "flex flex-wrap gap-x-3 gap-y-3",
+                  tierIdx === 0 && "justify-center",
+                )}>
+                  {tier.groups.map((group, groupIdx) => (
+                    <div
+                      key={groupIdx}
+                      className={cn(
+                        "flex flex-col gap-1.5 rounded-lg",
+                        // Visually separate subgroups when a tier has more
+                        // than one. Single-group tiers don't need the box.
+                        tier.groups.length > 1 && "border border-border/40 bg-background/30 p-2",
+                      )}
+                    >
+                      {tier.groups.length > 1 && group.label && (
+                        <div className="text-[10px] font-mono text-muted-foreground/60 px-1">
+                          {group.label}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {group.nodes.map((nodeId) => {
+                          const node = nodeById[nodeId]
+                          if (!node) return null
+                          const isH = hovered === nodeId
+                          const isDimmed = hovered != null && !connectedIds.has(nodeId) && hovered !== nodeId
+                          return (
+                            <div
+                              key={nodeId}
+                              ref={(el) => { nodeRefs.current[nodeId] = el }}
+                            >
+                              <NodeBox
+                                node={node}
+                                isHovered={isH}
+                                isDimmed={isDimmed}
+                                onHover={() => setHovered(nodeId)}
+                                onLeave={() => setHovered(null)}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <InspectorPanel
-            hovered={hovered}
-            hoveredNode={hoveredNode}
-            nodeById={nodeById}
-          />
+          <div className="mt-6 pt-4 border-t border-border/40 text-xs text-muted-foreground/50 text-center">
+            {NODES.length} nodes · {EDGES.length} edges · Hover any node to highlight its routing chain
+          </div>
         </div>
+
+        {/* Floating inspector. Fixed bottom-right so it never steals
+            horizontal space from the diagram, but stays visible while
+            the user hovers. On viewports under `md` it pins to the
+            bottom edge full-width so it doesn't obscure the diagram. */}
+        <FloatingInspector
+          hovered={hovered}
+          hoveredNode={hoveredNode}
+          nodeById={nodeById}
+        />
 
         {/* Decision table */}
         <h2 className="text-xl font-semibold mb-4">Decision Tree: Task → Destination</h2>
