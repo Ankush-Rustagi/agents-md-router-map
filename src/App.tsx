@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/page-header"
 import { TldrCard } from "@/components/tldr-card"
@@ -216,6 +216,12 @@ function ConnectionList({ label, items }: { label: string; items: GNode[] }) {
   )
 }
 
+interface EdgePath {
+  from: string
+  to: string
+  d: string
+}
+
 export default function App() {
   const [hovered, setHovered] = useState<string | null>(null)
 
@@ -225,6 +231,57 @@ export default function App() {
   const connectedIds = hovered
     ? new Set(EDGES.filter(e => e.from === hovered || e.to === hovered).flatMap(e => [e.from, e.to]))
     : new Set<string>()
+
+  // Connector geometry: measured from real DOM positions after layout so the
+  // curves stay anchored to the actual node boxes through resizes, font load
+  // shifts, and the lg/stacked breakpoint flip. We recompute on resize but
+  // NOT on hover, since hover only re-styles existing paths.
+  const tiersRef = useRef<HTMLDivElement>(null)
+  const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [edgePaths, setEdgePaths] = useState<EdgePath[]>([])
+  const [svgSize, setSvgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+
+  useLayoutEffect(() => {
+    const recompute = () => {
+      const container = tiersRef.current
+      if (!container) return
+      const cBox = container.getBoundingClientRect()
+      setSvgSize({ w: container.scrollWidth, h: container.scrollHeight })
+      const computed: EdgePath[] = []
+      for (const e of EDGES) {
+        const fromEl = nodeRefs.current[e.from]
+        const toEl = nodeRefs.current[e.to]
+        if (!fromEl || !toEl) continue
+        const fb = fromEl.getBoundingClientRect()
+        const tb = toEl.getBoundingClientRect()
+        const x1 = fb.right - cBox.left
+        const y1 = fb.top + fb.height / 2 - cBox.top
+        const x2 = tb.left - cBox.left
+        const y2 = tb.top + tb.height / 2 - cBox.top
+        // Horizontal control offset proportional to span so far-apart tiers
+        // get gentler curves than adjacent tiers.
+        const dx = Math.max((x2 - x1) * 0.5, 28)
+        computed.push({
+          from: e.from,
+          to: e.to,
+          d: `M ${x1},${y1} C ${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`,
+        })
+      }
+      setEdgePaths(computed)
+    }
+    recompute()
+    const ro = new ResizeObserver(recompute)
+    if (tiersRef.current) ro.observe(tiersRef.current)
+    window.addEventListener("resize", recompute)
+    // Fonts loading after first paint can shift node widths slightly; a
+    // delayed second pass catches those without needing a font-loaded event.
+    const t = window.setTimeout(recompute, 250)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", recompute)
+      window.clearTimeout(t)
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -272,9 +329,36 @@ export default function App() {
             its content updates in place at a fixed min height). */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 mb-10 items-start">
           <div className="rounded-xl border border-border bg-card overflow-x-auto p-5 order-2 lg:order-1">
-            <div className="flex gap-5 min-w-max">
+            <div ref={tiersRef} className="relative flex gap-5 min-w-max">
+              {/* Connector overlay. Sits behind the node columns (z-0) and
+                  ignores pointer events so hover still hits the buttons. */}
+              <svg
+                className="absolute inset-0 pointer-events-none text-foreground"
+                width={svgSize.w}
+                height={svgSize.h}
+                style={{ width: svgSize.w, height: svgSize.h }}
+                aria-hidden
+              >
+                {edgePaths.map((p) => {
+                  const isConnected = hovered != null && (p.from === hovered || p.to === hovered)
+                  const isDimmed = hovered != null && !isConnected
+                  return (
+                    <path
+                      key={`${p.from}-${p.to}`}
+                      d={p.d}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={isConnected ? 2 : 1}
+                      strokeOpacity={isConnected ? 0.7 : isDimmed ? 0.05 : 0.18}
+                      strokeLinecap="round"
+                      className="transition-[stroke-opacity,stroke-width] duration-150"
+                    />
+                  )
+                })}
+              </svg>
+
               {TIERS.map((tier, tierIdx) => (
-                <div key={tierIdx} className="flex flex-col gap-3 justify-center">
+                <div key={tierIdx} className="relative z-10 flex flex-col gap-3 justify-center">
                   <div className="text-[10px] text-muted-foreground/50 text-center font-mono mb-1">Tier {tierIdx}</div>
                   {tier.map(nodeId => {
                     const node = nodeById[nodeId]
@@ -282,14 +366,18 @@ export default function App() {
                     const isH = hovered === nodeId
                     const isDimmed = hovered != null && !connectedIds.has(nodeId) && hovered !== nodeId
                     return (
-                      <NodeBox
+                      <div
                         key={nodeId}
-                        node={node}
-                        isHovered={isH}
-                        isDimmed={isDimmed}
-                        onHover={() => setHovered(nodeId)}
-                        onLeave={() => setHovered(null)}
-                      />
+                        ref={(el) => { nodeRefs.current[nodeId] = el }}
+                      >
+                        <NodeBox
+                          node={node}
+                          isHovered={isH}
+                          isDimmed={isDimmed}
+                          onHover={() => setHovered(nodeId)}
+                          onLeave={() => setHovered(null)}
+                        />
+                      </div>
                     )
                   })}
                 </div>
