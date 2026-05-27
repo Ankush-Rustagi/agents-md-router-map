@@ -119,6 +119,103 @@ function NodeBox({ node, isHovered, isDimmed, onHover, onLeave }: {
   )
 }
 
+/**
+ * Sticky right-rail inspector that consolidates what used to be two
+ * separate panels (one above the DAG, one below). Keeping it in a fixed
+ * 320px column with a min-height stops the diagram from reflowing as the
+ * hover state changes, eliminating the jitter the user saw when sweeping
+ * across nodes.
+ */
+function InspectorPanel({
+  hovered,
+  hoveredNode,
+  nodeById,
+}: {
+  hovered: string | null
+  hoveredNode: GNode | null
+  nodeById: Record<string, GNode>
+}) {
+  const receivesFrom = hovered
+    ? EDGES.filter((e) => e.to === hovered).map((e) => nodeById[e.from]).filter(Boolean)
+    : []
+  const sendsTo = hovered
+    ? EDGES.filter((e) => e.from === hovered).map((e) => nodeById[e.to]).filter(Boolean)
+    : []
+
+  return (
+    <aside className="lg:sticky lg:top-6 order-1 lg:order-2 self-start">
+      <div className="rounded-xl border border-border bg-card p-5 min-h-[24rem] max-h-[calc(100vh-3rem)] overflow-y-auto">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-mono mb-3">
+          Inspector
+        </div>
+        {hoveredNode ? (
+          <>
+            <span
+              className={cn(
+                "inline-block rounded border px-1.5 py-px text-[10px] font-medium mb-2",
+                CATEGORY_META[hoveredNode.category].color,
+              )}
+            >
+              {CATEGORY_META[hoveredNode.category].label}
+            </span>
+            <div className="font-semibold text-sm leading-snug">{hoveredNode.label}</div>
+            <div className="text-xs text-muted-foreground mt-1">{hoveredNode.sub}</div>
+            {hoveredNode.path && (
+              <div className="text-[11px] text-muted-foreground/60 font-mono mt-2 break-all">
+                {hoveredNode.path}
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground/80 mt-2 leading-relaxed">
+              {CATEGORY_META[hoveredNode.category].desc}
+            </div>
+
+            {(receivesFrom.length > 0 || sendsTo.length > 0) && (
+              <div className="mt-5 pt-4 border-t border-border/50 space-y-4">
+                {receivesFrom.length > 0 && (
+                  <ConnectionList label="Receives from" items={receivesFrom} />
+                )}
+                {sendsTo.length > 0 && (
+                  <ConnectionList label="Sends to" items={sendsTo} />
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-sm text-muted-foreground/70 leading-relaxed">
+            Hover any node in the diagram to see its category, file path,
+            description, and which other nodes it sends to or receives from.
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function ConnectionList({ label, items }: { label: string; items: GNode[] }) {
+  return (
+    <div>
+      <div className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wider mb-2">
+        {label}
+      </div>
+      <div className="space-y-1.5">
+        {items.map((n) => (
+          <div key={n.id} className="flex items-center gap-2">
+            <span
+              className={cn(
+                "shrink-0 rounded border px-1.5 py-px text-[10px] font-medium",
+                CATEGORY_META[n.category].color,
+              )}
+            >
+              {CATEGORY_META[n.category].label}
+            </span>
+            <span className="text-xs leading-tight">{n.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [hovered, setHovered] = useState<string | null>(null)
 
@@ -163,75 +260,53 @@ export default function App() {
           ))}
         </div>
 
-        {/* Hover detail */}
-        <div className="min-h-14 rounded-xl border border-border bg-card px-4 py-3 mb-6 transition-all">
-          {hoveredNode ? (
-            <div>
-              <div className="font-semibold text-sm">{hoveredNode.label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{hoveredNode.sub}</div>
-              {hoveredNode.path && <div className="text-[11px] text-muted-foreground/60 font-mono mt-0.5">{hoveredNode.path}</div>}
-              <div className="text-xs text-muted-foreground mt-0.5">{CATEGORY_META[hoveredNode.category].desc}</div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Hover a node to see its path and description.</p>
-          )}
-        </div>
-
-        {/* Tier-based DAG layout */}
-        <div className="rounded-xl border border-border bg-card overflow-x-auto p-6 mb-10">
-          <div className="flex gap-6 min-w-max">
-            {TIERS.map((tier, tierIdx) => (
-              <div key={tierIdx} className="flex flex-col gap-3 justify-center">
-                <div className="text-[10px] text-muted-foreground/50 text-center font-mono mb-1">Tier {tierIdx}</div>
-                {tier.map(nodeId => {
-                  const node = nodeById[nodeId]
-                  if (!node) return null
-                  const isH = hovered === nodeId
-                  const isDimmed = hovered != null && !connectedIds.has(nodeId) && hovered !== nodeId
-                  return (
-                    <NodeBox
-                      key={nodeId}
-                      node={node}
-                      isHovered={isH}
-                      isDimmed={isDimmed}
-                      onHover={() => setHovered(nodeId)}
-                      onLeave={() => setHovered(null)}
-                    />
-                  )
-                })}
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 text-xs text-muted-foreground/50 text-center">
-            Edges: {EDGES.length} connections · Nodes: {NODES.length}
-          </div>
-        </div>
-
-        {/* Connections list for hovered node */}
-        {hovered && connectedIds.size > 1 && (
-          <div className="rounded-xl border border-border bg-card p-5 mb-8">
-            <div className="text-sm font-medium mb-3">
-              Connections for: <span className="text-foreground">{nodeById[hovered]?.label}</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {[
-                { label: "Receives from", items: EDGES.filter(e => e.to === hovered).map(e => nodeById[e.from]).filter(Boolean) },
-                { label: "Sends to", items: EDGES.filter(e => e.from === hovered).map(e => nodeById[e.to]).filter(Boolean) },
-              ].map(group => group.items.length > 0 && (
-                <div key={group.label}>
-                  <div className="text-xs text-muted-foreground/60 font-semibold uppercase tracking-wider mb-2">{group.label}</div>
-                  {group.items.map(n => n && (
-                    <div key={n.id} className="flex items-center gap-2 py-1.5 border-b border-border/30 last:border-0">
-                      <span className={cn("rounded border px-1.5 py-px text-[10px] font-medium", CATEGORY_META[n.category].color)}>{CATEGORY_META[n.category].label}</span>
-                      <span className="text-xs">{n.label}</span>
-                    </div>
-                  ))}
+        {/* Diagram + sticky inspector panel
+            -----------------------------------
+            Previously the hover details lived in two panels (one above the
+            DAG, one below). Both panels resized or appeared/disappeared on
+            hover, which reflowed the page and made the diagram jitter as
+            the cursor moved between nodes.
+            Now both live in a single sticky right-rail card whose width is
+            fixed, so the diagram never reflows. On screens narrower than
+            `lg`, the inspector stacks above the diagram (no jitter because
+            its content updates in place at a fixed min height). */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 mb-10 items-start">
+          <div className="rounded-xl border border-border bg-card overflow-x-auto p-6 order-2 lg:order-1">
+            <div className="flex gap-6 min-w-max">
+              {TIERS.map((tier, tierIdx) => (
+                <div key={tierIdx} className="flex flex-col gap-3 justify-center">
+                  <div className="text-[10px] text-muted-foreground/50 text-center font-mono mb-1">Tier {tierIdx}</div>
+                  {tier.map(nodeId => {
+                    const node = nodeById[nodeId]
+                    if (!node) return null
+                    const isH = hovered === nodeId
+                    const isDimmed = hovered != null && !connectedIds.has(nodeId) && hovered !== nodeId
+                    return (
+                      <NodeBox
+                        key={nodeId}
+                        node={node}
+                        isHovered={isH}
+                        isDimmed={isDimmed}
+                        onHover={() => setHovered(nodeId)}
+                        onLeave={() => setHovered(null)}
+                      />
+                    )
+                  })}
                 </div>
               ))}
             </div>
+
+            <div className="mt-4 text-xs text-muted-foreground/50 text-center">
+              Edges: {EDGES.length} connections · Nodes: {NODES.length}
+            </div>
           </div>
-        )}
+
+          <InspectorPanel
+            hovered={hovered}
+            hoveredNode={hoveredNode}
+            nodeById={nodeById}
+          />
+        </div>
 
         {/* Decision table */}
         <h2 className="text-xl font-semibold mb-4">Decision Tree: Task → Destination</h2>
