@@ -144,7 +144,7 @@ function InspectorPanel({
 
   return (
     <aside className="lg:sticky lg:top-6 order-1 lg:order-2 self-start">
-      <div className="rounded-xl border border-border bg-card p-5 min-h-[24rem] max-h-[calc(100vh-3rem)] overflow-y-auto">
+      <div className="rounded-xl border border-border bg-card p-4 min-h-[24rem] max-h-[calc(100vh-3rem)] overflow-y-auto">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-mono mb-3">
           Inspector
         </div>
@@ -228,7 +228,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <main className="mx-auto max-w-6xl px-4 md:px-6 py-10">
+      <main className="mx-auto max-w-[1320px] px-4 md:px-6 py-10">
         <PageHeader
           type="Agent Routing Map"
           title="AGENTS.md Router Map"
@@ -270,9 +270,9 @@ export default function App() {
             fixed, so the diagram never reflows. On screens narrower than
             `lg`, the inspector stacks above the diagram (no jitter because
             its content updates in place at a fixed min height). */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 mb-10 items-start">
-          <div className="rounded-xl border border-border bg-card overflow-x-auto p-6 order-2 lg:order-1">
-            <div className="flex gap-6 min-w-max">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 mb-10 items-start">
+          <div className="rounded-xl border border-border bg-card overflow-x-auto p-5 order-2 lg:order-1">
+            <div className="flex gap-5 min-w-max">
               {TIERS.map((tier, tierIdx) => (
                 <div key={tierIdx} className="flex flex-col gap-3 justify-center">
                   <div className="text-[10px] text-muted-foreground/50 text-center font-mono mb-1">Tier {tierIdx}</div>
